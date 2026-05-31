@@ -205,7 +205,15 @@ func buildDriverDSN(u *url.URL, q url.Values) (string, error) {
 			cfg.Params[key] = vals[0]
 		}
 	}
-	return cfg.FormatDSN(), nil
+	dsn := cfg.FormatDSN()
+	// Fuzz-found: arbitrary user-supplied query params (e.g. "tls=2", an unregistered
+	// TLS profile name) can produce a DSN that go-sql-driver/mysql only rejects at
+	// first Ping/Conn time. Validate up front so a bad MySQL DSN fails fast at
+	// startup with a clear error instead of much later when the first message arrives.
+	if _, err := mysqldriver.ParseDSN(dsn); err != nil {
+		return "", fmt.Errorf("invalid mysql driver DSN: %w", err)
+	}
+	return dsn, nil
 }
 
 // registerTLSConfig loads a PEM CA bundle from sslRootCert, builds a *tls.Config
@@ -357,8 +365,10 @@ func extractDurationParam(q url.Values, key string, defaultValue time.Duration) 
 // censorPassword returns a string representation of the URL with the password
 // replaced by "*****". Symmetrical to db/pg.censorPassword.
 func censorPassword(u *url.URL) string {
-	if password, hasPassword := u.User.Password(); hasPassword {
-		return strings.Replace(u.String(), ":"+password+"@", ":*****@", 1)
+	if _, hasPassword := u.User.Password(); hasPassword {
+		censored := *u
+		censored.User = url.UserPassword(u.User.Username(), "*****")
+		return strings.Replace(censored.String(), "%2A%2A%2A%2A%2A", "*****", 1)
 	}
 	return u.String()
 }

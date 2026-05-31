@@ -57,6 +57,7 @@ help:
 	@echo "  make coverage                   - Run tests and show coverage"
 	@echo "  make coverage-html              - Run tests and show coverage (as HTML)"
 	@echo "  make coverage-upload            - Upload coverage results to codecov.io"
+	@echo "  make fuzz-mysql                 - Run native Go fuzz targets that exercise MySQL paths (FUZZTIME=10s default)"
 	@echo
 	@echo "Lint/format:"
 	@echo "  make fmt                        - Run 'go fmt'"
@@ -290,6 +291,9 @@ coverage-html:
 
 coverage-upload:
 	cd build/coverage && (curl -s https://codecov.io/bash | bash)
+
+fuzz-mysql: .PHONY
+	bash scripts/fuzz-mysql.sh
 
 
 # Lint/formatting targets
