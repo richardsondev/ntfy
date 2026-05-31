@@ -32,6 +32,7 @@ require (
 	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/jackc/pgx/v5 v5.9.2
+	github.com/lib/pq v1.12.3
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/prometheus/client_golang v1.23.2
 	github.com/stripe/stripe-go/v74 v74.30.0

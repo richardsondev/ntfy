@@ -19,6 +19,7 @@ import (
 	"heckel.io/ntfy/v2/util"
 
 	"github.com/go-sql-driver/mysql"
+	"github.com/lib/pq"
 )
 
 const (
@@ -1528,9 +1529,16 @@ func (a *Manager) Close() error {
 // The MySQL check prefers the typed errors.As path for accuracy but falls back
 // to a substring match for the typical text-formatted variant.
 func isUniqueConstraintError(err error) bool {
+	if err == nil {
+		return false
+	}
 	var mysqlErr *mysql.MySQLError
-	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
-		return true
+	if errors.As(err, &mysqlErr) {
+		return mysqlErr.Number == 1062
+	}
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
+		return pqErr.Code == "23505"
 	}
 	errStr := err.Error()
 	return strings.Contains(errStr, "UNIQUE constraint failed") ||
