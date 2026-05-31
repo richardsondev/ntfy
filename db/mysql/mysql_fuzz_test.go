@@ -220,8 +220,20 @@ func FuzzCensorPassword(f *testing.F) {
 		if err != nil {
 			t.Fatalf("redacted URL is not parseable: %q: %v", redacted, err)
 		}
-		if redactedPassword, ok := redactedURL.User.Password(); ok && redactedPassword == password {
-			t.Fatalf("redacted URL still contains original password in userinfo: %q", redacted)
+		// The leak invariant is "the password slot must now contain the placeholder",
+		// not "the password slot must differ from the original". If a user's
+		// password happens to be the placeholder string itself, the redaction still
+		// succeeded -- the slot was overwritten, the original bytes are gone, the
+		// match is coincidence.
+		const placeholder = "*****"
+		redactedPassword, ok := redactedURL.User.Password()
+		if !ok {
+			// Password was stripped entirely -- also a valid form of redaction.
+			return
+		}
+		if redactedPassword != placeholder {
+			t.Fatalf("redacted URL did not place the password placeholder in userinfo (got %q, want %q): %q",
+				redactedPassword, placeholder, redacted)
 		}
 	})
 }
