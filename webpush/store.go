@@ -43,6 +43,13 @@ type queries struct {
 	insertSubscriptionTopic                    string
 	deleteSubscriptionTopicAll                 string
 	deleteSubscriptionTopicWithoutSubscription string
+
+	// upsertReturnsID is true when upsertSubscription returns the canonical id
+	// of the affected row in a single round-trip (PostgreSQL "RETURNING id").
+	// When false (MySQL — no RETURNING clause), the upsert is executed and
+	// followed by selectSubscriptionIDByEndpoint inside the same transaction
+	// to recover the id of the row that won the unique-constraint race.
+	upsertReturnsID bool
 }
 
 // UpsertSubscription adds or updates Web Push subscriptions for the given topics and user ID.
@@ -64,10 +71,22 @@ func (s *Store) UpsertSubscription(endpoint string, auth, p256dh, userID string,
 			return err
 		}
 		// Insert or update subscription, and read back the actual ID (which may differ from
-		// the generated one if another request for the same endpoint raced us and inserted first)
+		// the generated one if another request for the same endpoint raced us and inserted first).
+		// Backends that support RETURNING (PostgreSQL) recover the id in the upsert itself;
+		// MySQL has no RETURNING clause so we execute the upsert and then re-query the id by
+		// endpoint inside the same transaction.
 		updatedAt, warnedAt := time.Now().Unix(), 0
-		if err := tx.QueryRow(s.queries.upsertSubscription, subscriptionID, endpoint, auth, p256dh, userID, subscriberIP.String(), updatedAt, warnedAt).Scan(&subscriptionID); err != nil {
-			return err
+		if s.queries.upsertReturnsID {
+			if err := tx.QueryRow(s.queries.upsertSubscription, subscriptionID, endpoint, auth, p256dh, userID, subscriberIP.String(), updatedAt, warnedAt).Scan(&subscriptionID); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Exec(s.queries.upsertSubscription, subscriptionID, endpoint, auth, p256dh, userID, subscriberIP.String(), updatedAt, warnedAt); err != nil {
+				return err
+			}
+			if err := tx.QueryRow(s.queries.selectSubscriptionIDByEndpoint, endpoint).Scan(&subscriptionID); err != nil {
+				return err
+			}
 		}
 		// Replace all subscription topics
 		if _, err := tx.Exec(s.queries.deleteSubscriptionTopicAll, subscriptionID); err != nil {

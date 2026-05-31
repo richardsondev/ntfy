@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 	"heckel.io/ntfy/v2/db"
+	"heckel.io/ntfy/v2/db/mysql"
 	"heckel.io/ntfy/v2/db/pg"
 	dbtest "heckel.io/ntfy/v2/db/test"
 	"heckel.io/ntfy/v2/util"
@@ -40,6 +41,16 @@ func forEachBackend(t *testing.T, f func(t *testing.T, newManager newManagerFunc
 			host, err := pg.Open(schemaDSN)
 			require.Nil(t, err)
 			a, err := NewPostgresManager(db.New(host, nil), config)
+			require.Nil(t, err)
+			return a
+		})
+	})
+	t.Run("mysql", func(t *testing.T) {
+		schemaDSN := dbtest.CreateTestMySQLSchema(t)
+		f(t, func(config *Config) *Manager {
+			host, err := mysql.Open(schemaDSN)
+			require.Nil(t, err)
+			a, err := NewMySQLManager(db.New(host, nil), config)
 			require.Nil(t, err)
 			return a
 		})

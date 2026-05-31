@@ -106,6 +106,7 @@ func NewSQLiteStore(filename, startupQueries string) (*Store, error) {
 			insertSubscriptionTopic:                    sqliteInsertSubscriptionTopicQuery,
 			deleteSubscriptionTopicAll:                 sqliteDeleteSubscriptionTopicAllQuery,
 			deleteSubscriptionTopicWithoutSubscription: sqliteDeleteSubscriptionTopicWithoutSubscriptionQuery,
+			upsertReturnsID:                            true,
 		},
 	}, nil
 }

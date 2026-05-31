@@ -407,7 +407,7 @@ This generator helps you configure your self-hosted ntfy instance. It's not full
 
 ## Database options
 ntfy uses a database for storing messages ([message cache](#message-cache)), users and [access control](#access-control), and [web push](#web-push) subscriptions.
-You can choose between **SQLite** and **PostgreSQL** as the database backend.
+You can choose between **SQLite**, **PostgreSQL**, and **MySQL** as the database backend.
 
 ### SQLite
 By default, ntfy uses SQLite with separate database files for each store. This is the simplest setup and requires
@@ -477,6 +477,63 @@ the primary and replica URLs):
 | `pool_conn_max_lifetime`  | -       | Maximum amount of time a connection may be reused (Go duration, e.g. `5m`, `1h`) |
 | `pool_conn_max_idle_time` | -       | Maximum amount of time a connection may be idle (Go duration, e.g. `30s`, `5m`)  |
 
+### MySQL (EXPERIMENTAL)
+You can also configure ntfy to use MySQL 8.0.20 or newer for **all** database-backed stores by setting the
+`database-url` option to a MySQL connection string with the `mysql://` scheme. The wiring, semantics, and rules are
+identical to the [PostgreSQL backend](#postgresql-experimental): setting `database-url` disables `cache-file`,
+`auth-file`, and `web-push-file`; it implicitly enables authentication and access control; and `database-replica-urls`
+can be used to offload read-heavy queries to one or more read replicas.
+
+**Requirements:**
+
+* MySQL **8.0.20 or newer**. ntfy refuses to start against older 8.0.x releases (the row-alias `INSERT ... AS new ON DUPLICATE KEY UPDATE` upsert syntax used internally was introduced in 8.0.20).
+* **MariaDB is not supported.** ntfy detects MariaDB at startup via `SELECT VERSION()` and exits with a clear error message.
+* The MySQL user must have privileges to `CREATE TABLE`, `CREATE INDEX`, and `INSERT/UPDATE/DELETE/SELECT` on the configured database.
+* Tables are created with `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin` so unique indexes (e.g. username, web push endpoint) are case-sensitive and emoji-safe.
+
+Examples:
+
+=== "Simple"
+    ```yaml
+    database-url: "mysql://user:pass@host:3306/ntfy"
+    ```
+
+=== "With TLS"
+    ```yaml
+    database-url: "mysql://user:pass@host:3306/ntfy?tls=true&pool_max_conns=50&pool_conn_max_idle_time=5m"
+    ```
+
+=== "With CA certificate"
+    ```yaml
+    database-url: "mysql://user:pass@host:3306/ntfy?sslrootcert=/etc/ntfy/db-ca-cert.pem&pool_max_conns=30"
+    ```
+
+=== "With read replicas"
+    ```yaml
+    database-url: "mysql://user:pass@primary:3306/ntfy?sslrootcert=/etc/ntfy/db-ca-cert.pem&pool_max_conns=30"
+    database-replica-urls:
+      - "mysql://user:pass@replica1:3306/ntfy?sslrootcert=/etc/ntfy/db-ca-cert.pem&pool_max_conns=30"
+      - "mysql://user:pass@replica2:3306/ntfy?sslrootcert=/etc/ntfy/db-ca-cert.pem&pool_max_conns=30"
+    ```
+
+All `database-replica-urls` entries **must use the same scheme** as `database-url` (either all `postgres://`/`postgresql://`
+or all `mysql://`); ntfy validates this at startup.
+
+The MySQL backend accepts the standard query parameters of the [`go-sql-driver/mysql`](https://github.com/go-sql-driver/mysql#parameters)
+driver — `parseTime`, `loc`, `tls`, `readTimeout`, `writeTimeout`, `interpolateParams`, etc. ntfy unconditionally sets
+`parseTime=true`, `loc=UTC`, and `allowNativePasswords=true` (override-able via the same query parameters if needed).
+
+TLS can be configured via three mechanisms:
+
+| `tls=` value                  | Behavior                                                                                              |
+|-------------------------------|-------------------------------------------------------------------------------------------------------|
+| `tls=true`                    | Use TLS and verify the server certificate against the system CA pool.                                 |
+| `tls=skip-verify`             | Use TLS but do not verify the certificate (testing only — not for production).                        |
+| `sslrootcert=/path/to/ca.pem` | Use TLS and verify the server certificate against the given PEM-encoded CA bundle. An optional `sslservername=...` query parameter sets the SNI / certificate-verification hostname (useful when connecting to an IP or a proxy hostname). |
+
+ntfy supports the same custom pool-tuning parameters as the PostgreSQL backend (`pool_max_conns`, `pool_max_idle_conns`,
+`pool_conn_max_lifetime`, `pool_conn_max_idle_time`); they are stripped from the URL before being passed to the driver.
+
 
 ## Message cache
 If desired, ntfy can temporarily keep notifications in an in-memory or an on-disk cache. Caching messages for a short period
@@ -484,7 +541,7 @@ of time is important to allow [phones](subscribe/phone.md) and other devices wit
 notifications that they may have missed. 
 
 By default, ntfy keeps messages **in-memory for 12 hours**, which means that **cached messages do not survive an application
-restart**. You can override this behavior by setting `cache-file` (SQLite) or `database-url` (PostgreSQL).
+restart**. You can override this behavior by setting `cache-file` (SQLite), or `database-url` (PostgreSQL or MySQL).
 
 * `cache-duration`: defines the duration for which messages are stored in the cache (default is `12h`). 
 
@@ -2275,8 +2332,8 @@ variable before running the `ntfy` command (e.g. `export NTFY_LISTEN_HTTP=:80`).
 | `key-file`                                 | `NTFY_KEY_FILE`                                 | *filename*                                          | -                 | HTTPS/TLS private key file, only used if `listen-https` is set.                                                                                                                                                                         |
 | `cert-file`                                | `NTFY_CERT_FILE`                                | *filename*                                          | -                 | HTTPS/TLS certificate file, only used if `listen-https` is set.                                                                                                                                                                         |
 | `firebase-key-file`                        | `NTFY_FIREBASE_KEY_FILE`                        | *filename*                                          | -                 | If set, also publish messages to a Firebase Cloud Messaging (FCM) topic for your app. This is optional and only required to save battery when using the Android app. See [Firebase (FCM)](#firebase-fcm).                               |
-| `database-url`                             | `NTFY_DATABASE_URL`                             | *string (connection URL)*                           | -                 | PostgreSQL connection string (e.g. `postgres://user:pass@host:5432/ntfy`). If set, uses PostgreSQL for all database-backed stores (message cache, user manager, web push) instead of SQLite. See [database options](#database-options). |
-| `database-replica-urls`                    | `NTFY_DATABASE_REPLICA_URLS`                    | *list of strings (connection URLs)*                 | -                 | PostgreSQL read replica connection strings. Non-critical read-only queries are distributed across replicas (round-robin) with automatic fallback to primary. Requires `database-url`.                                                   |
+| `database-url`                             | `NTFY_DATABASE_URL`                             | *string (connection URL)*                           | -                 | PostgreSQL or MySQL connection string (e.g. `postgres://user:pass@host:5432/ntfy` or `mysql://user:pass@host:3306/ntfy`). If set, uses PostgreSQL/MySQL for all database-backed stores (message cache, user manager, web push) instead of SQLite. See [database options](#database-options). |
+| `database-replica-urls`                    | `NTFY_DATABASE_REPLICA_URLS`                    | *list of strings (connection URLs)*                 | -                 | PostgreSQL or MySQL read replica connection strings (must use the same scheme as `database-url`). Non-critical read-only queries are distributed across replicas (round-robin) with automatic fallback to primary. Requires `database-url`.                                                   |
 | `cache-file`                               | `NTFY_CACHE_FILE`                               | *filename*                                          | -                 | If set, messages are cached in a local SQLite database instead of only in-memory. This allows for service restarts without losing messages in support of the since= parameter. See [message cache](#message-cache).                     |
 | `cache-duration`                           | `NTFY_CACHE_DURATION`                           | *duration*                                          | 12h               | Duration for which messages will be buffered before they are deleted. This is required to support the `since=...` and `poll=1` parameter. Set this to `0` to disable the cache entirely.                                                |
 | `cache-startup-queries`                    | `NTFY_CACHE_STARTUP_QUERIES`                    | *string (SQL queries)*                              | -                 | SQL queries to run during database startup; this is useful for tuning and [enabling WAL mode](#message-cache)                                                                                                                           |

@@ -36,6 +36,13 @@ func newTestPostgresStore(t *testing.T) *message.Cache {
 	return store
 }
 
+func newTestMySQLStore(t *testing.T) *message.Cache {
+	testDB := dbtest.CreateTestMySQL(t)
+	store, err := message.NewMySQLStore(testDB, 0, 0)
+	require.Nil(t, err)
+	return store
+}
+
 func forEachBackend(t *testing.T, f func(t *testing.T, s *message.Cache)) {
 	t.Run("sqlite", func(t *testing.T) {
 		f(t, newSqliteTestStore(t))
@@ -45,6 +52,9 @@ func forEachBackend(t *testing.T, f func(t *testing.T, s *message.Cache)) {
 	})
 	t.Run("postgres", func(t *testing.T) {
 		f(t, newTestPostgresStore(t))
+	})
+	t.Run("mysql", func(t *testing.T) {
+		f(t, newTestMySQLStore(t))
 	})
 }
 

@@ -27,6 +27,12 @@ func forEachBackend(t *testing.T, f func(t *testing.T, store *webpush.Store)) {
 		require.Nil(t, err)
 		f(t, store)
 	})
+	t.Run("mysql", func(t *testing.T) {
+		testDB := dbtest.CreateTestMySQL(t)
+		store, err := webpush.NewMySQLStore(testDB)
+		require.Nil(t, err)
+		f(t, store)
+	})
 }
 
 func TestStoreUpsertSubscriptionSubscriptionsForTopic(t *testing.T) {

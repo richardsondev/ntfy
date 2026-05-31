@@ -94,6 +94,7 @@ func NewPostgresStore(d *db.DB) (*Store, error) {
 			insertSubscriptionTopic:                    postgresInsertSubscriptionTopicQuery,
 			deleteSubscriptionTopicAll:                 postgresDeleteSubscriptionTopicAllQuery,
 			deleteSubscriptionTopicWithoutSubscription: postgresDeleteSubscriptionTopicWithoutSubscriptionQuery,
+			upsertReturnsID:                            true,
 		},
 	}, nil
 }

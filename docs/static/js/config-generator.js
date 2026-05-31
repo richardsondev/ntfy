@@ -573,9 +573,13 @@
       }
     }
 
-    // database-url must start with postgres://
-    if (values["database-url"] && !values["database-url"].startsWith("postgres://")) {
-      warnings.push("database-url must start with postgres://");
+    // database-url must start with postgres://, postgresql://, or mysql://
+    if (values["database-url"]) {
+      const dbUrl = values["database-url"];
+      const validPrefix = dbUrl.startsWith("postgres://") || dbUrl.startsWith("postgresql://") || dbUrl.startsWith("mysql://");
+      if (!validPrefix) {
+        warnings.push("database-url must start with postgres://, postgresql://, or mysql://");
+      }
     }
 
     // Web push requires all fields + base-url

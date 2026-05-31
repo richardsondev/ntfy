@@ -39,7 +39,7 @@ var flagsServe = append(
 	altsrc.NewStringFlag(&cli.StringFlag{Name: "key-file", Aliases: []string{"key_file", "K"}, EnvVars: []string{"NTFY_KEY_FILE"}, Usage: "private key file, if listen-https is set"}),
 	altsrc.NewStringFlag(&cli.StringFlag{Name: "cert-file", Aliases: []string{"cert_file", "E"}, EnvVars: []string{"NTFY_CERT_FILE"}, Usage: "certificate file, if listen-https is set"}),
 	altsrc.NewStringFlag(&cli.StringFlag{Name: "firebase-key-file", Aliases: []string{"firebase_key_file", "F"}, EnvVars: []string{"NTFY_FIREBASE_KEY_FILE"}, Usage: "Firebase credentials file; if set additionally publish to FCM topic"}),
-	altsrc.NewStringFlag(&cli.StringFlag{Name: "database-url", Aliases: []string{"database_url"}, EnvVars: []string{"NTFY_DATABASE_URL"}, Usage: "PostgreSQL connection string for database-backed stores (e.g. postgres://user:pass@host:5432/ntfy)"}),
+	altsrc.NewStringFlag(&cli.StringFlag{Name: "database-url", Aliases: []string{"database_url"}, EnvVars: []string{"NTFY_DATABASE_URL"}, Usage: "PostgreSQL or MySQL connection string for database-backed stores (e.g. postgres://user:pass@host:5432/ntfy or mysql://user:pass@host:3306/ntfy)"}),
 	altsrc.NewStringSliceFlag(&cli.StringSliceFlag{Name: "database-replica-urls", Aliases: []string{"database_replica_urls"}, EnvVars: []string{"NTFY_DATABASE_REPLICA_URLS"}, Usage: "PostgreSQL read replica connection strings for offloading read queries"}),
 	altsrc.NewStringFlag(&cli.StringFlag{Name: "cache-file", Aliases: []string{"cache_file", "C"}, EnvVars: []string{"NTFY_CACHE_FILE"}, Usage: "cache file used for message caching"}),
 	altsrc.NewStringFlag(&cli.StringFlag{Name: "cache-duration", Aliases: []string{"cache_duration", "b"}, EnvVars: []string{"NTFY_CACHE_DURATION"}, Value: util.FormatDuration(server.DefaultCacheDuration), Usage: "buffer messages for this time to allow `since` requests"}),
@@ -294,12 +294,14 @@ func execServe(c *cli.Context) error {
 	}
 
 	// Check values
-	if databaseURL != "" && !strings.HasPrefix(databaseURL, "postgres://") && !strings.HasPrefix(databaseURL, "postgresql://") {
-		return errors.New("if database-url is set, it must start with postgres:// or postgresql://")
+	if databaseURL != "" && !isSupportedDatabaseURL(databaseURL) {
+		return errors.New("if database-url is set, it must start with postgres://, postgresql://, or mysql://")
 	} else if databaseURL != "" && (authFile != "" || cacheFile != "" || webPushFile != "") {
 		return errors.New("if database-url is set, auth-file, cache-file, and web-push-file must not be set")
 	} else if len(databaseReplicaURLs) > 0 && databaseURL == "" {
 		return errors.New("database-replica-urls can only be used if database-url is also set")
+	} else if len(databaseReplicaURLs) > 0 && !replicaURLsMatchPrimary(databaseURL, databaseReplicaURLs) {
+		return errors.New("all database-replica-urls must use the same scheme as database-url")
 	} else if firebaseKeyFile != "" && !util.FileExists(firebaseKeyFile) {
 		return errors.New("if set, FCM key file must exist")
 	} else if firebaseKeyFile != "" && !server.FirebaseAvailable {
@@ -555,6 +557,41 @@ func execServe(c *cli.Context) error {
 	}
 	log.Info("Exiting.")
 	return nil
+}
+
+// isSupportedDatabaseURL reports whether the given database-url scheme is one
+// of the supported backends (postgres, postgresql, mysql).
+func isSupportedDatabaseURL(databaseURL string) bool {
+	return strings.HasPrefix(databaseURL, "postgres://") ||
+		strings.HasPrefix(databaseURL, "postgresql://") ||
+		strings.HasPrefix(databaseURL, "mysql://")
+}
+
+// replicaURLsMatchPrimary reports whether every replica URL uses the same
+// backend scheme family as the primary database-url. PostgreSQL accepts both
+// postgres:// and postgresql:// — these are treated as equivalent.
+func replicaURLsMatchPrimary(primary string, replicas []string) bool {
+	primaryFamily := schemeFamily(primary)
+	if primaryFamily == "" {
+		return false
+	}
+	for _, r := range replicas {
+		if schemeFamily(r) != primaryFamily {
+			return false
+		}
+	}
+	return true
+}
+
+func schemeFamily(dsn string) string {
+	switch {
+	case strings.HasPrefix(dsn, "postgres://"), strings.HasPrefix(dsn, "postgresql://"):
+		return "postgres"
+	case strings.HasPrefix(dsn, "mysql://"):
+		return "mysql"
+	default:
+		return ""
+	}
 }
 
 func parseIPHostPrefix(host string) (prefixes []netip.Prefix, err error) {

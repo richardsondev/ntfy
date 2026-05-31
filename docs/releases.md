@@ -1926,6 +1926,10 @@ and the [ntfy Android app](https://github.com/binwiederhier/ntfy-android/release
 
 ### ntfy server v2.24.0 (UNRELEASED)
 
+**Features:**
+
+* Add experimental MySQL backend (`database-url: "mysql://..."`) as a third option alongside SQLite and PostgreSQL for the message cache, user manager, and web push stores. Requires MySQL 8.0.20 or newer; MariaDB is not supported. Supports TLS via `tls=true`, `tls=skip-verify`, or a pinned CA bundle via `sslrootcert=/path/to/ca.pem` (with optional `sslservername=...`). Read replicas are supported via `database-replica-urls` (all entries must use the same `mysql://` scheme). See [database options](config.md#database-options).
+
 **Bug fixes + maintenance:**
 
 * Extend account token automatically from the PWA service worker, so installed PWAs don't get logged out ([#1669](https://github.com/binwiederhier/ntfy/pull/1669), [#1203](https://github.com/binwiederhier/ntfy/issues/1203), [#1533](https://github.com/binwiederhier/ntfy/issues/1533), thanks to [@nihalgonsalves](https://github.com/nihalgonsalves) for the contribution)

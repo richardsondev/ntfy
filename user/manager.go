@@ -17,6 +17,8 @@ import (
 	"heckel.io/ntfy/v2/log"
 	"heckel.io/ntfy/v2/payments"
 	"heckel.io/ntfy/v2/util"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 const (
@@ -1520,8 +1522,18 @@ func (a *Manager) Close() error {
 	return a.db.Close()
 }
 
-// isUniqueConstraintError checks if the error is a unique constraint violation for both SQLite and PostgreSQL
+// isUniqueConstraintError checks if the error is a unique constraint violation
+// for SQLite ("UNIQUE constraint failed"), PostgreSQL (SQLSTATE 23505), and
+// MySQL (error code 1062 — duplicate entry for a UNIQUE/PRIMARY KEY index).
+// The MySQL check prefers the typed errors.As path for accuracy but falls back
+// to a substring match for the typical text-formatted variant.
 func isUniqueConstraintError(err error) bool {
+	var mysqlErr *mysql.MySQLError
+	if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+		return true
+	}
 	errStr := err.Error()
-	return strings.Contains(errStr, "UNIQUE constraint failed") || strings.Contains(errStr, "23505")
+	return strings.Contains(errStr, "UNIQUE constraint failed") ||
+		strings.Contains(errStr, "23505") ||
+		strings.Contains(errStr, "Error 1062")
 }

@@ -38,32 +38,45 @@
 #
 # firebase-key-file: <filename>
 
-# If "database-url" is set, ntfy will use PostgreSQL for all database-backed stores (message cache,
-# user manager, and web push subscriptions) instead of SQLite. When set, the "cache-file",
-# "auth-file", and "web-push-file" options must not be set.
+# If "database-url" is set, ntfy will use PostgreSQL or MySQL for all database-backed stores
+# (message cache, user manager, and web push subscriptions) instead of SQLite. The backend is
+# selected by the URL scheme:
+#   postgres://...    or  postgresql://...    PostgreSQL
+#   mysql://...                              MySQL 8.0.20 or newer (MariaDB is not supported)
+#
+# When set, the "cache-file", "auth-file", and "web-push-file" options must not be set.
 #
 # Note: Setting "database-url" implicitly enables authentication and access control.
 # The default access is "read-write" (see "auth-default-access").
 #
-# The URL supports standard PostgreSQL parameters (sslmode, connect_timeout, sslcert, etc.),
-# as well as ntfy-specific connection pool parameters:
+# The URL supports the standard connection parameters of each backend (PostgreSQL: sslmode,
+# connect_timeout, sslcert, sslrootcert, ...; MySQL: parseTime, tls, readTimeout, ...) as well
+# as ntfy-specific connection pool parameters:
 #   pool_max_conns=10          - Maximum number of open connections (default: 10)
 #   pool_max_idle_conns=N      - Maximum number of idle connections
 #   pool_conn_max_lifetime=5m  - Maximum lifetime of a connection (Go duration)
 #   pool_conn_max_idle_time=1m - Maximum idle time of a connection (Go duration)
 #
+# For MySQL, TLS can be configured with "tls=true" (system CA pool), "tls=skip-verify"
+# (testing only), or with "sslrootcert=/path/to/ca.pem" plus an optional "sslservername=..."
+# to pin a managed-database CA bundle.
+#
 # See https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-PARAMKEYWORDS
-# for the full list of supported PostgreSQL connection parameters.
+# for the full list of supported PostgreSQL connection parameters, and
+# https://github.com/go-sql-driver/mysql#parameters for the MySQL driver parameters.
 #
 # Examples:
 #   database-url: "postgres://user:pass@host:5432/ntfy"
 #   database-url: "postgres://user:pass@host:5432/ntfy?sslmode=require&pool_max_conns=50"
+#   database-url: "mysql://user:pass@host:3306/ntfy"
+#   database-url: "mysql://user:pass@host:3306/ntfy?tls=true&pool_max_conns=50"
+#   database-url: "mysql://user:pass@host:3306/ntfy?sslrootcert=/etc/ntfy/db-ca-cert.pem"
 #
 # database-url: <connection-string>
 
 # If "cache-file" is set, messages are cached in a local SQLite database instead of only in-memory.
 # This allows for service restarts without losing messages in support of the since= parameter.
-# Not required if "database-url" is set (messages are stored in PostgreSQL instead).
+# Not required if "database-url" is set (messages are stored in PostgreSQL or MySQL instead).
 #
 # The "cache-duration" parameter defines the duration for which messages will be buffered
 # before they are deleted. This is required to support the "since=..." and "poll=1" parameter.
@@ -227,7 +240,7 @@
 # - web-push-public-key is the generated VAPID public key, e.g. AA1234BBCCddvveekaabcdfqwertyuiopasdfghjklzxcvbnm1234567890
 # - web-push-private-key is the generated VAPID private key, e.g. AA2BB1234567890abcdefzxcvbnm1234567890
 # - web-push-file is a database file to keep track of browser subscription endpoints, e.g. /var/cache/ntfy/webpush.db
-#   Not required if "database-url" is set (subscriptions are stored in PostgreSQL instead).
+#   Not required if "database-url" is set (subscriptions are stored in PostgreSQL or MySQL instead).
 # - web-push-email-address is the admin email address send to the push provider, e.g. sysadmin@example.com
 # - web-push-startup-queries is an optional list of queries to run on startup
 # - web-push-expiry-warning-duration defines the duration after which unused subscriptions are sent a warning (default is 55d)

@@ -34,6 +34,7 @@ import (
 	"gopkg.in/yaml.v2"
 	"heckel.io/ntfy/v2/attachment"
 	"heckel.io/ntfy/v2/db"
+	"heckel.io/ntfy/v2/db/mysql"
 	"heckel.io/ntfy/v2/db/pg"
 	"heckel.io/ntfy/v2/log"
 	"heckel.io/ntfy/v2/mail"
@@ -191,16 +192,27 @@ func New(conf *Config) (*Server, error) {
 	if payments.Available && conf.StripeSecretKey != "" {
 		stripe = newStripeAPI()
 	}
-	// Open shared PostgreSQL connection pool if configured
+	// Open shared SQL connection pool if configured (PostgreSQL or MySQL).
+	// The scheme prefix on database-url selects the backend; the same
+	// scheme must be used for every database-replica-urls entry — this is
+	// enforced at config parse time (cmd/serve.go).
 	var pool *db.DB
+	var isMySQL bool
 	if conf.DatabaseURL != "" {
-		primary, err := pg.Open(conf.DatabaseURL)
+		openPrimary := pg.Open
+		openReplica := pg.OpenReplica
+		if strings.HasPrefix(conf.DatabaseURL, "mysql://") {
+			openPrimary = mysql.Open
+			openReplica = mysql.OpenReplica
+			isMySQL = true
+		}
+		primary, err := openPrimary(conf.DatabaseURL)
 		if err != nil {
 			return nil, err
 		}
 		var replicas []*db.Host
 		for _, replicaURL := range conf.DatabaseReplicaURLs {
-			r, err := pg.OpenReplica(replicaURL)
+			r, err := openReplica(replicaURL)
 			if err != nil {
 				// Close already-opened replicas before returning
 				for _, opened := range replicas {
@@ -213,15 +225,18 @@ func New(conf *Config) (*Server, error) {
 		}
 		pool = db.New(primary, replicas)
 	}
-	messageCache, err := createMessageCache(conf, pool)
+	messageCache, err := createMessageCache(conf, pool, isMySQL)
 	if err != nil {
 		return nil, err
 	}
 	var wp *webpush.Store
 	if conf.WebPushPublicKey != "" {
-		if pool != nil {
+		switch {
+		case pool != nil && isMySQL:
+			wp, err = webpush.NewMySQLStore(pool)
+		case pool != nil:
 			wp, err = webpush.NewPostgresStore(pool)
-		} else {
+		default:
 			wp, err = webpush.NewSQLiteStore(conf.WebPushFile, conf.WebPushStartupQueries)
 		}
 		if err != nil {
@@ -258,9 +273,12 @@ func New(conf *Config) (*Server, error) {
 			BcryptCost:          conf.AuthBcryptCost,
 			QueueWriterInterval: conf.AuthStatsQueueWriterInterval,
 		}
-		if pool != nil {
+		switch {
+		case pool != nil && isMySQL:
+			userManager, err = user.NewMySQLManager(pool, authConfig)
+		case pool != nil:
 			userManager, err = user.NewPostgresManager(pool, authConfig)
-		} else {
+		default:
 			userManager, err = user.NewSQLiteManager(conf.AuthFile, conf.AuthStartupQueries, authConfig)
 		}
 		if err != nil {
@@ -301,9 +319,11 @@ func New(conf *Config) (*Server, error) {
 	return s, nil
 }
 
-func createMessageCache(conf *Config, pool *db.DB) (*message.Cache, error) {
+func createMessageCache(conf *Config, pool *db.DB, isMySQL bool) (*message.Cache, error) {
 	if conf.CacheDuration == 0 {
 		return message.NewNopStore()
+	} else if pool != nil && isMySQL {
+		return message.NewMySQLStore(pool, conf.CacheBatchSize, conf.CacheBatchTimeout)
 	} else if pool != nil {
 		return message.NewPostgresStore(pool, conf.CacheBatchSize, conf.CacheBatchTimeout)
 	} else if conf.CacheFile != "" {

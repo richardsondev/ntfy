@@ -12,6 +12,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"github.com/urfave/cli/v2/altsrc"
 	"heckel.io/ntfy/v2/db"
+	"heckel.io/ntfy/v2/db/mysql"
 	"heckel.io/ntfy/v2/db/pg"
 	"heckel.io/ntfy/v2/server"
 	"heckel.io/ntfy/v2/user"
@@ -380,11 +381,22 @@ func createUserManager(c *cli.Context) (*user.Manager, error) {
 		QueueWriterInterval: user.DefaultUserStatsQueueWriterInterval,
 	}
 	if databaseURL != "" {
-		host, dbErr := pg.Open(databaseURL)
-		if dbErr != nil {
-			return nil, dbErr
+		switch schemeFamily(databaseURL) {
+		case "postgres":
+			host, dbErr := pg.Open(databaseURL)
+			if dbErr != nil {
+				return nil, dbErr
+			}
+			return user.NewPostgresManager(db.New(host, nil), authConfig)
+		case "mysql":
+			host, dbErr := mysql.Open(databaseURL)
+			if dbErr != nil {
+				return nil, dbErr
+			}
+			return user.NewMySQLManager(db.New(host, nil), authConfig)
+		default:
+			return nil, errors.New("database-url must start with postgres://, postgresql://, or mysql://")
 		}
-		return user.NewPostgresManager(db.New(host, nil), authConfig)
 	} else if authFile != "" {
 		if !util.FileExists(authFile) {
 			return nil, errors.New("auth-file does not exist; please start the server at least once to create it")
