@@ -1,0 +1,83 @@
+# Podman/Docker compose definition for the MySQL integration test suite.
+#
+# Topology:
+#   * One internal-only bridge network ("ntfy-mysql-int", internal: true)
+#     carrying mysql <-> ntfy traffic. Neither container can reach the
+#     internet from this network.
+#   * MySQL exposes 3306/tcp ONLY on the internal network — no host
+#     port mapping, so the database is unreachable from the host.
+#   * ntfy publishes 80/tcp as 127.0.0.1:8888 on the host so the pytest
+#     suite running on the host can drive it via HTTP/WebSocket. The
+#     host port binding is loopback-only.
+#
+# The "internal: true" flag is the key isolation primitive: it removes
+# the default gateway from the network, so even if a container resolved
+# an external IP the kernel has no route to it. Published ports remain
+# functional because rootless podman uses pasta/slirp4netns to perform
+# the host-side port translation outside the container netns.
+
+name: ntfy-mysql-int
+
+networks:
+  ntfy-mysql-int:
+    driver: bridge
+    internal: true
+
+services:
+  mysql:
+    image: docker.io/library/mysql:8.0
+    container_name: ntfy-mysql-int-db
+    command:
+      - --default-authentication-plugin=caching_sha2_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_bin
+      - --skip-host-cache
+      - --skip-name-resolve
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: ntfy
+      MYSQL_USER: ntfy
+      MYSQL_PASSWORD: ntfypass
+    networks:
+      - ntfy-mysql-int
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpass", "--silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  ntfy:
+    build:
+      context: ../../..
+      dockerfile: tests/integration/mysql/Dockerfile.ntfy
+    image: ntfy-mysql-int:local
+    container_name: ntfy-mysql-int-ntfy
+    depends_on:
+      mysql:
+        condition: service_healthy
+    command:
+      - serve
+    environment:
+      NTFY_BASE_URL: "http://localhost:8888"
+      NTFY_LISTEN_HTTP: ":80"
+      NTFY_DATABASE_URL: "mysql://ntfy:ntfypass@mysql:3306/ntfy?parseTime=true"
+      NTFY_CACHE_DURATION: "12h"
+      NTFY_KEEPALIVE_INTERVAL: "10s"
+      NTFY_MANAGER_INTERVAL: "10s"
+      NTFY_AUTH_DEFAULT_ACCESS: "read-write"
+      NTFY_WEB_PUSH_PUBLIC_KEY: "BB2E0-_H83c1TQ8WxJBrQyyTHCb_FlClvzu1cMS41gWf1c_0ZGIkJZbkAgc8qOGG19GQCyLdP8TtXIGgOGlxGuY"
+      NTFY_WEB_PUSH_PRIVATE_KEY: "vsTOISiYFXAxh5Nx1imzP-5CVCZk1eZNYAw_SfaAJuY"
+      NTFY_WEB_PUSH_EMAIL_ADDRESS: "noreply@example.com"
+      NTFY_LOG_LEVEL: "INFO"
+      NTFY_LOG_FORMAT: "text"
+    ports:
+      - "127.0.0.1:8888:80"
+    networks:
+      - ntfy-mysql-int
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost/v1/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 5s

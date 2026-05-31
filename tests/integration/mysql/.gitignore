@@ -1,0 +1,6 @@
+# Local development artifacts produced by the integration test runner.
+results/
+.venv/
+.pytest_cache/
+__pycache__/
+*.pyc

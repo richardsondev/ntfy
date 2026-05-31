@@ -1,0 +1,32 @@
+# syntax=docker/dockerfile:1
+#
+# Multi-stage build for the integration-test ntfy image.
+#
+# This Dockerfile is invoked from podman-compose with the project root as
+# its build context (../../..). The first stage compiles the ntfy binary
+# from the working tree (so it includes any local MySQL backend changes);
+# the second stage ships a minimal Alpine runtime image.
+#
+# The build is deliberately self-contained: it creates placeholder
+# server/docs and server/site directories so the //go:embed directives in
+# server/server.go are satisfied without requiring a docs/web-app build,
+# and it disables CGO so the resulting binary has no glibc/musl-loader
+# dependencies (modernc.org/sqlite is the pure-Go SQLite driver bundled
+# by ntfy v2 already, so CGO is not required for the SQLite backend).
+
+FROM golang:1.25-alpine AS builder
+RUN apk add --no-cache git ca-certificates
+WORKDIR /src
+COPY . .
+RUN mkdir -p server/docs server/site && \
+    : > server/docs/index.html && \
+    : > server/site/app.html
+ENV CGO_ENABLED=0 GOFLAGS=-trimpath
+RUN go build -ldflags="-s -w" -o /out/ntfy .
+
+FROM alpine:3.20
+RUN apk add --no-cache tzdata ca-certificates wget
+COPY --from=builder /out/ntfy /usr/bin/ntfy
+EXPOSE 80
+ENTRYPOINT ["/usr/bin/ntfy"]
+CMD ["serve"]

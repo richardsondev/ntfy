@@ -1,0 +1,32 @@
+# ntfy server config used by the MySQL integration-test compose project.
+# Most options are also set via NTFY_* environment variables in
+# podman-compose.yml; this file documents the full intended config so the
+# image can be debugged stand-alone with `ntfy serve -c ntfy-server.yml`.
+
+base-url: "http://localhost:8888"
+listen-http: ":80"
+
+# MySQL backend — connection string points at the in-network mysql service.
+database-url: "mysql://ntfy:ntfypass@mysql:3306/ntfy?parseTime=true"
+
+# Disable defaults that would conflict with database-url
+# cache-file:     (unset)
+# auth-file:      (unset)
+# web-push-file:  (unset)
+
+cache-duration: "12h"
+keepalive-interval: "10s"
+manager-interval: "10s"
+
+# Auth is implicitly enabled by database-url; allow anonymous read-write so the
+# integration tests can publish without first creating users for every case.
+# A dedicated "auth required" test creates its own restricted topic.
+auth-default-access: "read-write"
+
+# VAPID keys (test-only — generated for this integration suite, never used in production)
+web-push-public-key: "BB2E0-_H83c1TQ8WxJBrQyyTHCb_FlClvzu1cMS41gWf1c_0ZGIkJZbkAgc8qOGG19GQCyLdP8TtXIGgOGlxGuY"
+web-push-private-key: "vsTOISiYFXAxh5Nx1imzP-5CVCZk1eZNYAw_SfaAJuY"
+web-push-email-address: "noreply@example.com"
+
+log-level: "INFO"
+log-format: "text"

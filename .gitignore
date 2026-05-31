@@ -18,4 +18,11 @@ node_modules/
 __pycache__
 web/dev-dist/
 venv/
+.venv/
+.pytest_cache/
+*.pyc
 cmd/key-file.yaml
+
+# Integration test artifacts
+tests/integration/**/results/
+tests/integration/**/.venv/
