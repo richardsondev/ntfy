@@ -75,6 +75,12 @@ $runMeta = [ordered]@{
 }
 $runMeta | ConvertTo-Json -Depth 3 | Set-Content -Path (Join-Path $RunDirAbs "run.json")
 
+# Update the "latest run" pointer immediately so monitors / status scripts can
+# find an in-progress run (otherwise they'd see the previous run until this
+# one finishes).
+$latestFile = Join-Path $repoRoot "tests/fuzz/results/latest.txt"
+Set-Content -Path $latestFile -Value $RunDirAbs
+
 if (-not $Quiet) {
     Write-Host "fuzz-parallel: $($targets.Count) targets, fuzztime=$FuzzTime, GOMAXPROCS=$WorkersPerTarget/target (total workers ~ $($runMeta.total_workers) / $($runMeta.cpu_count) cores)"
     Write-Host "results dir : $RunDirAbs"
@@ -185,8 +191,9 @@ $summaryLines += "Failed: $fail / $($results.Count)"
 $summaryLines | Set-Content -Path (Join-Path $RunDirAbs "summary.log")
 $results | ConvertTo-Json -Depth 4 | Set-Content -Path (Join-Path $RunDirAbs "summary.json")
 
-# Persistent "latest run" pointer so other tooling can find the most recent run
-# without re-discovering the timestamp.
+# Re-affirm the "latest run" pointer at the end (in case another run started
+# concurrently and overwrote it -- end-state pointer should reflect what
+# actually finished here).
 $latestFile = Join-Path $repoRoot "tests/fuzz/results/latest.txt"
 Set-Content -Path $latestFile -Value $RunDirAbs
 

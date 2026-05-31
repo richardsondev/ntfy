@@ -45,6 +45,8 @@ second on a developer laptop.
 The orchestration scripts iterate every target above. Default per-target
 budget is `10s`; override with `FUZZTIME=…` for a longer soak.
 
+### Sequential runner (one target at a time)
+
 ```powershell
 # Windows
 pwsh scripts/fuzz-mysql.ps1                  # 10s/target, default
@@ -63,13 +65,51 @@ make fuzz-mysql
 FUZZTIME=60s make fuzz-mysql
 ```
 
-Per-target output is written to `tests/fuzz/results/fuzz-<TargetName>.log`,
-and a roll-up to `tests/fuzz/results/fuzz-summary.log`. That directory is
-gitignored — only commit logs intentionally and never crash reproducers from
-there (commit them under `<pkg>/testdata/fuzz/<TargetName>/` instead, see
-below).
+### Parallel runner (all targets at once)
 
-A single target can be run directly with the standard Go tooling:
+For meaningful soak runs, prefer the parallel runner — it launches one
+`go test -fuzz` process per target with each child capped at
+`GOMAXPROCS=3` so 11 simultaneous targets stay near 1× physical cores.
+
+```powershell
+pwsh scripts/fuzz-parallel.ps1                       # 10m/target default
+pwsh scripts/fuzz-parallel.ps1 -FuzzTime 30m         # 30m/target
+pwsh scripts/fuzz-parallel.ps1 -FuzzTime 6h          # 6h/target overnight soak
+pwsh scripts/fuzz-parallel.ps1 -FuzzTime 1h -WorkersPerTarget 2   # lower CPU load
+```
+
+Each run writes to `tests/fuzz/results/run-<YYYYMMDD-HHMMSS>/` (per-target
+log, `summary.log`, `summary.json`, `run.json`) and updates
+`tests/fuzz/results/latest.txt` with the run dir path so other tooling can
+locate the current/last run without guessing the timestamp.
+
+Conflict safety:
+* Each target gets a dedicated `<TargetName>.log` (no shared writers).
+* Each target writes corpus only to `<pkg>/testdata/fuzz/<TargetName>/`
+  (per-target subdir, no collisions).
+* Build cache locking is handled by Go's toolchain.
+
+### Loop until a clean pass
+
+When iterating on a fix, run the loop runner to repeat parallel passes
+until one succeeds without crashes (or a max-iter cap is hit):
+
+```powershell
+pwsh scripts/fuzz-loop.ps1 -FuzzTime 10m -MaxIterations 5
+```
+
+### Status check on an in-progress run
+
+`scripts/fuzz-status.ps1` reads `latest.txt` and prints per-target current
+elapsed time, execs count, exec rate, corpus size, and whether each
+underlying `go test` process has exited yet:
+
+```powershell
+pwsh scripts/fuzz-status.ps1                 # status of latest run
+pwsh scripts/fuzz-status.ps1 -RunDir tests/fuzz/results/run-...   # specific run
+```
+
+### Single target via stock Go tooling
 
 ```bash
 go test -run '^$' -fuzz '^FuzzBuildDriverDSN$' -fuzztime 30s ./db/mysql/...
